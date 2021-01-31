@@ -10,12 +10,14 @@ namespace WindowsFormsApp1.BusinessLayer
     {
         private string name;
         private double speed;
+        public bool enroute { get; set; }
         private Location location;
 
-        public Boat(string name,double speed,Location location)
+        public Boat(string name, double speed, bool enroute, Location location)
         {
             this.name = name;
             this.speed = speed;
+            this.enroute = enroute;
             this.location = location;
         }
         public Boat()
