@@ -2,6 +2,7 @@
 using RestSharp;
 using System;
 using System.Collections.Generic;
+using System.Configuration;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -13,10 +14,11 @@ namespace WindowsFormsApp1.BusinessLayer
         public static double getWeatherData()
         {
             double windspeed = 0.00;
+            string apikey = ConfigurationManager.AppSettings.Get("apiKey");
             try
             {
                 var httpClient = new RestClient("http://api.openweathermap.org/data/2.5/");
-                var request = new RestRequest("weather?q=durban&appid=d86b929dc7cb67f9c96c0c0259f6b0a4");
+                var request = new RestRequest("weather?q=durban&appid="+apikey);
                 var response = httpClient.Execute(request);
                 if (response.StatusCode == System.Net.HttpStatusCode.OK)
                 {

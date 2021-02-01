@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Configuration;
 using System.Data;
 using System.Drawing;
 using System.Linq;
@@ -9,16 +10,17 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using WindowsFormsApp1.BusinessLayer;
+using Timer = System.Windows.Forms.Timer;
 
 namespace WindowsFormsApp1
 {
-    public partial class Form1 : Form
+    public partial class Form1 : Form,IHarbourControl
     {
         public enum TypeOfBoat
         {
-            speedboat = 1,
-            sailboat = 2,
-            cargoShip = 3
+            speedboat,
+            sailboat,
+            cargoShip
         }
 
         bool shipInTheHarbour = false;
@@ -26,53 +28,74 @@ namespace WindowsFormsApp1
         double distanceFromPerimeterToDock = 10;
         List<Boat> CurrentBoatsAtThePerimeter = new List<Boat>();
         TravellingTime travellingTime = new TravellingTime();
-
+        DateTime nextStartDateTime = DateTime.Now;
 
         public Form1()
         {
             InitializeComponent();
             DisplayGoogleMap();
             StartTheProcess();
-
-             // Stop the timer from running.
-
             if (CurrentBoatsAtThePerimeter.Count > 0)
-            {  RequestPermissionToTravel(CurrentBoatsAtThePerimeter); 
+            {  
+                RequestPermissionToTravel(CurrentBoatsAtThePerimeter); 
             }
         }
         public void CalculateTravelTime(Boat boat)
         {
-            if (shipInTheHarbour)
-            {
-                var nextStartDateTime = DateTime.Now.AddDays(5);
-                double millisecondsToWait = (nextStartDateTime - DateTime.Now).TotalMilliseconds;
-                System.Threading.Timer timer = new System.Threading.Timer( (o) => { CheckWindSpeed(); },
-                null, (uint)millisecondsToWait, 0);
-            }
-            if (!shipInTheHarbour)
-            {
-                double timeTaken = distanceFromPerimeterToDock / boat.Speed;
-                this.travellingTime.DepartureTime = DateTime.Now;
-                this.travellingTime.ArrivalTime = DateTime.Now.AddHours(timeTaken);
-                boat.enroute = true;
+            double timeTaken = distanceFromPerimeterToDock / boat.Speed;
+            this.travellingTime.DepartureTime = DateTime.Now;
+            this.travellingTime.ArrivalTime = DateTime.Now.AddHours(timeTaken);
 
-                var nextStartDateTime = DateTime.Now.AddHours(timeTaken);
-                double millisecondsToWait = (nextStartDateTime - DateTime.Now).TotalMilliseconds;
-                System.Threading.Timer timer = new System.Threading.Timer((o) => { UpdatePortTraffic(boat); },
+            //Check if there's currently a ship inside the harbour
+            if (this.shipInTheHarbour)
+            {
+               //We have to wait for the boat to reach the dock from the perimeter and it will do so in the nextStartDate.
+                double millisecondsToWait = (this.nextStartDateTime - DateTime.Now).TotalMilliseconds;
+                System.Threading.Timer timer = new System.Threading.Timer( (o) => { CheckBoatInsideHarbour(boat);},
                 null, (uint)millisecondsToWait, 0);
+
+                //Once the startDate is equals to the current date. The next boat can enter the harbour.
+                if (this.nextStartDateTime == DateTime.Now)
+                {
+                    CheckBoatInsideHarbour(boat);
+                    BoatisTravelling(timeTaken, boat);
+                }
+            }
+
+            //If there's no ship then this boat can enter
+            else 
+            {
+                CheckBoatInsideHarbour(boat);
+                BoatisTravelling(timeTaken, boat);
             }
         }
+
+        //This will wait for the boat to reach the dock before clearing out the port traffic.
+        public void BoatisTravelling(double timeTaken,Boat boat)
+        {
+            //Adding minutes to make it better for testing purposes, but for the actual code I'd have to add hours.
+            this.nextStartDateTime = DateTime.Now.AddMinutes(timeTaken);
+            double millisecondsToWait = (nextStartDateTime - DateTime.Now).TotalMilliseconds;
+            System.Threading.Timer timer = new System.Threading.Timer((o) => { UpdatePortTraffic(boat); },
+            null, (uint)millisecondsToWait, 0);
+        }
+
+        //Clearing out the port here.
         public void UpdatePortTraffic(Boat boat)
         {
-            shipInTheHarbour = false;
+            this.shipInTheHarbour = false;
             boat.enroute = false;
         }
 
-        public bool CheckHarbourClearance(List<Boat> listofBoats)
+
+        //Current boat has entered the harbour, so other boats have to wait for this one to reach the dock first.
+        public void CheckBoatInsideHarbour(Boat boat)
         {
-            return shipInTheHarbour;
+                this.shipInTheHarbour = true;
+                boat.enroute = true;
         }
 
+        //Boats need to check if they enter the harbour just yet.
         public bool RequestPermissionToTravel(List<Boat> listofBoats)
         {
             Harbour harbourArea = new Harbour();
@@ -85,7 +108,7 @@ namespace WindowsFormsApp1
                 if (boats[i].Name == "sailboat")
                 {
                     double windspeed = CheckWindSpeed();
-                    if (10 < windspeed && windspeed > 30)
+                    if ((10 < windspeed) && (windspeed > 30))
                         CalculateTravelTime(boats[i]);
                 }
                 else
@@ -93,6 +116,7 @@ namespace WindowsFormsApp1
                     CalculateTravelTime(boats[i]);
                 }
                 boats[i].Location = harbourArea.Dock;
+                //will save the boat to the database once it has arrived.
                 SavingBoatArrival(boats[i]);
                 CurrentBoatsAtThePerimeter.Remove(boats[i]);
             }
@@ -112,21 +136,17 @@ namespace WindowsFormsApp1
             }
         }
 
-        public void ShipScheduling()
+        //A ship randomly arriving at the harbour.
+        public Boat ShipRandomlyArrives()
         {
             Random random = new Random();
             int value = random.Next(1, 3);
-            //Ship has arrived
-             ShipRandomlyArrives(value);
-        }
-
-        //A ship randomly arriving at the harbour.
-        public Boat ShipRandomlyArrives(int value)
-        {
             Boat boat = new Boat();
+           
+           
             boat.Location = new Location(-29.867997, 31.014409);
             TypeOfBoat boatType = new TypeOfBoat();
-            value = (int)boatType;
+          //  value = (int)boatType;
 
             switch (value)
             {
@@ -134,29 +154,32 @@ namespace WindowsFormsApp1
                     {
                         boat.Speed = 30.0;
                         boat.Name = "speedboat";
-                        return boat;
+                        break;
                     }
 
                 case 2:
                     {
                         boat.Speed = 15.0;
                         boat.Name = "sailboat";
-                        return boat;
+                        break;
                     }
 
                 case 3:
                     {
                         boat.Speed = 5.0;
                         boat.Name = "cargoShip";
-                        return boat;
+                        break;
                     }
             }
-            if (boat.Name != null) { this.CurrentBoatsAtThePerimeter.Add(boat); }
-            
+            if (boat.Name != null) 
+            { 
+                this.CurrentBoatsAtThePerimeter.Add(boat); 
+            }
             return boat;
         }
 
 
+        //Checking the windspeed in durban currently.
         public double CheckWindSpeed()
         {
             windSpeed = WeatherService.getWeatherData();
@@ -178,24 +201,41 @@ namespace WindowsFormsApp1
             }
         }
 
+        //Using this to display the map on the webbrowser.
         private void DisplayGoogleMap()
         {
             //Link copied directly from the page, I just simply want to display it.
-            webBrowser1.Navigate("https://www.google.com/maps/place/Maydon+Wharf+St,+Maydon+Wharf,+Durban,+4001/@-29.8728755,31.006163,17z/data=!3m1!4b1!4m13!1m7!3m6!1s0x1ef7a9019b2fa7ad:0x9ec214ee099c63d8!2sHarbour,+Durban!3b1!8m2!3d-29.8723388!4d31.0249093!3m4!1s0x1ef7a99798347769:0x36fab2048461c3ab!8m2!3d-29.8728775!4d31.0083545");
+            string mapUrl = ConfigurationManager.AppSettings.Get("mapUrl");
+            webBrowser1.Navigate(mapUrl);
             webBrowser1.ScriptErrorsSuppressed = true;
         }
-
         private void StartTheProcess()
         {
+            CheckWindSpeedPeriodically();
             Random ran = new Random();
-            var nextStartDateTime = DateTime.Now.AddSeconds(ran.Next(1, 10));
+            var nextStartDateTime = DateTime.Now.AddSeconds(ran.Next(5, 10));
             double millisecondsToWait = (nextStartDateTime - DateTime.Now).TotalMilliseconds;
-            System.Threading.Timer timer = new System.Threading.Timer((o) => { ShipScheduling(); },
+            System.Threading.Timer timer = new System.Threading.Timer((o) => { ShipRandomlyArrives(); },
             null, (uint)millisecondsToWait, 0);
             Thread.Sleep(3500); // Wait a bit over 4 seconds.
             timer.Change(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(2));
             Thread.Sleep(9000);
             timer.Change(-1, -1);
         }
+
+        private void button2_Click(object sender, EventArgs e)
+        {
+            MessageBox.Show("Thanks for trying out our beta version");
+            Environment.Exit(0);    
+        }
+
+        private Timer timer1;
+        public void CheckWindSpeedPeriodically()
+        {
+            timer1 = new Timer();
+            timer1.Tick += new EventHandler(button1_Click);
+            timer1.Interval = 2000; // in miliseconds
+            timer1.Start();
+        }      
     }
 }
